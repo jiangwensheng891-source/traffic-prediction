@@ -1,0 +1,234 @@
+// =====================================================
+// 全局样式 - 5G-V2X车联网可视化系统
+// =====================================================
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  font-family: $font-family;
+  font-size: $font-size-base;
+  color: $text-primary;
+  background: $gradient-bg;
+  overflow: hidden;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.3);
+  border-radius: 3px;
+  
+  &:hover {
+    background: rgba(0, 212, 255, 0.5);
+  }
+}
+
+// Element Plus组件样式覆盖
+.el-card {
+  background: $bg-card !important;
+  border: 1px solid $border-color !important;
+  border-radius: $radius-md !important;
+  box-shadow: $shadow-card !important;
+  
+  .el-card__header {
+    padding: $spacing-md;
+    border-bottom: 1px solid $border-light;
+    color: $primary-color;
+    font-weight: 600;
+  }
+  
+  .el-card__body {
+    padding: $spacing-md;
+  }
+}
+
+.el-button {
+  font-family: $font-family;
+  
+  &.el-button--primary {
+    background: $gradient-primary;
+    border: none;
+    
+    &:hover {
+      opacity: 0.9;
+    }
+  }
+  
+  &.el-button--danger {
+    background: $gradient-danger;
+    border: none;
+  }
+}
+
+.el-slider {
+  .el-slider__runway {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .el-slider__bar {
+    background: $gradient-primary;
+  }
+  
+  .el-slider__button {
+    border-color: $primary-color;
+  }
+}
+
+.el-input {
+  .el-input__wrapper {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid $border-light;
+    box-shadow: none;
+    
+    &:hover {
+      border-color: $primary-color;
+    }
+    
+    &.is-focus {
+      border-color: $primary-color;
+      box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2);
+    }
+  }
+  
+  .el-input__inner {
+    color: $text-primary;
+    
+    &::placeholder {
+      color: $text-muted;
+    }
+  }
+}
+
+.el-radio-group {
+  .el-radio-button {
+    .el-radio-button__inner {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: $border-light;
+      color: $text-secondary;
+    }
+    
+    &.is-active {
+      .el-radio-button__inner {
+        background: $gradient-primary;
+        border-color: $primary-color;
+        color: $text-primary;
+        box-shadow: $shadow-primary;
+      }
+    }
+  }
+}
+
+.el-upload {
+  .el-upload-dragger {
+    background: rgba(255, 255, 255, 0.02);
+    border: 2px dashed $border-light;
+    border-radius: $radius-md;
+    
+    &:hover {
+      border-color: $primary-color;
+    }
+  }
+}
+
+.el-message-box {
+  background: $bg-secondary !important;
+  border: 1px solid $border-color !important;
+  
+  .el-message-box__title {
+    color: $text-primary !important;
+  }
+  
+  .el-message-box__content {
+    color: $text-secondary !important;
+  }
+}
+
+// 动画关键帧
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes flash {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+// 工具类
+.text-primary {
+  color: $primary-color !important;
+}
+
+.text-danger {
+  color: $danger-color !important;
+}
+
+.text-success {
+  color: $success-color !important;
+}
+
+.text-warning {
+  color: $warning-color !important;
+}
+
+.bg-danger {
+  background: $gradient-danger !important;
+}
+
+.flash-animation {
+  animation: flash 1s infinite;
+}
+
+.pulse-animation {
+  animation: pulse 2s infinite;
+}
