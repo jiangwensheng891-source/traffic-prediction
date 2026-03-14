@@ -1,14 +1,14 @@
 <!-- =====================================================
      主应用组件 - 5G-V2X车联网可视化系统
-     页面整体布局：顶部标题栏 + 左侧控制区 + 主画布区 + 右侧指标面板 + 底部说明栏
+     支持双视图模式：V2X可视化 + 城市交通风险热力图
      ===================================================== -->
 
 <template>
   <div class="v2x-system">
-    <!-- 顶部标题栏 (8%高度) -->
+    <!-- 顶部标题栏 -->
     <header class="system-header">
       <div class="header-title">
-        <h1>基于5G-V2X的智能车联网超视距协同避让可视化系统</h1>
+        <h1>{{ pageTitle }}</h1>
       </div>
       <div class="header-actions">
         <el-button type="primary" @click="handleReset" class="reset-btn">
@@ -18,9 +18,9 @@
       </div>
     </header>
 
-    <!-- 主体内容区域 (84%高度) -->
+    <!-- 主体内容区域 -->
     <main class="system-main">
-      <!-- 左侧控制区 (25%宽度) -->
+      <!-- 左侧控制区 -->
       <aside class="control-panel">
         <ControlPanel
           :current-scene="currentScene"
@@ -35,12 +35,15 @@
           @threshold1-change="handleThreshold1Change"
           @threshold2-change="handleThreshold2Change"
           @file-upload="handleFileUpload"
+          @view-change="handleViewChange"
         />
       </aside>
 
-      <!-- 主可视化画布区 (50%宽度) -->
+      <!-- 主可视化区域 -->
       <section class="visualization-area">
+        <!-- V2X可视化画布 -->
         <VisualizationCanvas
+          v-if="viewMode === 'v2x'"
           ref="canvasRef"
           :current-scene="currentScene"
           :vehicle-speed="vehicleSpeed"
@@ -50,25 +53,33 @@
           :collision-triggered="collisionTriggered"
           @collision-end="handleCollisionEnd"
         />
+        
+        <!-- 热力图地图 -->
+        <MapCanvas v-else ref="mapRef" />
       </section>
 
-      <!-- 右侧指标面板区 (25%宽度) -->
+      <!-- 右侧面板区域 -->
       <aside class="indicator-panel">
+        <!-- V2X指标面板 -->
         <IndicatorPanel
+          v-if="viewMode === 'v2x'"
           :simulation-data="currentSimulationData"
           :warning-level="warningLevel"
           :current-scene="currentScene"
           :scene-config="currentSceneConfig"
         />
+        
+        <!-- 热力图统计面板 -->
+        <StatsPanel v-else />
       </aside>
     </main>
 
-    <!-- 底部说明栏 (8%高度) -->
+    <!-- 底部说明栏 -->
     <footer class="system-footer">
       <div class="footer-content">
         <p>
           <el-icon><InfoFilled /></el-icon>
-          核心价值：通过5G-V2X车联网技术打破单车雷达的感知局限，让车辆被遮挡的盲区路况变得可见，实现超视距协同避让，显著提升道路交通安全水平
+          {{ footerText }}
         </p>
       </div>
     </footer>
@@ -81,14 +92,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import ControlPanel from '@/components/ControlPanel.vue'
 import VisualizationCanvas from '@/components/VisualizationCanvas.vue'
 import IndicatorPanel from '@/components/IndicatorPanel.vue'
+import MapCanvas from '@/components/MapCanvas.vue'
+import StatsPanel from '@/components/StatsPanel.vue'
 import { defaultSimulationData } from '@/data/simulationData.js'
 import { parseSimulationFile } from '@/utils/dataParser.js'
 import { sceneConfigs } from '@/config/scenes.js'
+import { useHeatmapStore } from '@/stores/heatmap'
+
+const heatmapStore = useHeatmapStore()
 
 // =====================================================
-// 响应式状态定义
+// V2X模式状态
 // =====================================================
-
 const currentScene = ref('city')
 const vehicleSpeed = ref(40)
 const vehicleDensity = ref(200)
@@ -99,19 +114,33 @@ const currentSimulationData = ref(null)
 const warningLevel = ref(0)
 const collisionTriggered = ref(false)
 const canvasRef = ref(null)
+const mapRef = ref(null)
+
+// =====================================================
+// 视图模式
+// =====================================================
+const viewMode = ref('v2x')
 
 // =====================================================
 // 计算属性
 // =====================================================
+const currentSceneConfig = computed(() => sceneConfigs[currentScene.value] || sceneConfigs.city)
 
-const currentSceneConfig = computed(() => {
-  return sceneConfigs[currentScene.value] || sceneConfigs.city
+const pageTitle = computed(() => {
+  return viewMode.value === 'v2x' 
+    ? '基于5G-V2X的智能车联网超视距协同避让可视化系统'
+    : '城市交通风险热力图'
+})
+
+const footerText = computed(() => {
+  return viewMode.value === 'v2x'
+    ? '核心价值：通过5G-V2X车联网技术打破单车雷达的感知局限，让车辆被遮挡的盲区路况变得可见，实现超视距协同避让，显著提升道路交通安全水平'
+    : '基于5G-V2X的智能交通可视化平台 - 通过热力图直观展示城市道路碰撞风险分布'
 })
 
 // =====================================================
-// 数据匹配函数
+// V2X数据匹配
 // =====================================================
-
 const matchSimulationData = (speed, density) => {
   const dataSource = uploadedData.value || defaultSimulationData
   const matchedData = dataSource.find(item => 
@@ -160,20 +189,19 @@ const checkWarningStatus = () => {
 }
 
 const showCollisionWarning = () => {
-  ElMessageBox.alert(
-    'V2X超视距预警可有效避免该类事故',
-    '碰撞事故已触发',
-    {
-      confirmButtonText: '确定',
-      type: 'error',
-      center: true
-    }
-  )
+  ElMessageBox.alert('V2X超视距预警可有效避免该类事故', '碰撞事故已触发', {
+    confirmButtonText: '确定',
+    type: 'error',
+    center: true
+  })
 }
 
 // =====================================================
-// 事件处理函数
+// 事件处理
 // =====================================================
+const handleViewChange = (mode) => {
+  viewMode.value = mode
+}
 
 const handleSceneChange = (scene) => {
   currentScene.value = scene
@@ -235,28 +263,28 @@ const handleFileUpload = async (file) => {
 
 const validateData = (data) => {
   if (!Array.isArray(data) || data.length === 0) return false
-  const requiredFields = [
-    'vehicleSpeed', 'vehicleDensity',
-    'msgSuccessRate50m', 'msgSuccessRate150m', 'packetLossRate150m',
-    'adjacentVehicles', 'channelBusyRate', 'avgMsgDelay',
-    'throughput', 'wirelessBlindSpot', 'avoidanceSuccessRate', 'advanceWarningTime'
-  ]
+  const requiredFields = ['vehicleSpeed', 'vehicleDensity', 'msgSuccessRate50m', 'msgSuccessRate150m', 'packetLossRate150m', 'adjacentVehicles', 'channelBusyRate', 'avgMsgDelay', 'throughput', 'wirelessBlindSpot', 'avoidanceSuccessRate', 'advanceWarningTime']
   return data.every(item => requiredFields.every(field => item.hasOwnProperty(field)))
 }
 
 const handleReset = () => {
-  const config = currentSceneConfig.value
-  vehicleSpeed.value = Math.floor((config.speedRange[0] + config.speedRange[1]) / 2 / 10) * 10
-  vehicleDensity.value = Math.floor((config.densityRange[0] + config.densityRange[1]) / 2 / 50) * 50
-  thresholdLevel1.value = 80
-  thresholdLevel2.value = 50
-  warningLevel.value = 0
-  collisionTriggered.value = false
-  updateSimulationData()
-  if (canvasRef.value) {
-    canvasRef.value.resetAnimation()
+  if (viewMode.value === 'v2x') {
+    // V2X模式重置
+    const config = currentSceneConfig.value
+    vehicleSpeed.value = Math.floor((config.speedRange[0] + config.speedRange[1]) / 2 / 10) * 10
+    vehicleDensity.value = Math.floor((config.densityRange[0] + config.densityRange[1]) / 2 / 50) * 50
+    thresholdLevel1.value = 80
+    thresholdLevel2.value = 50
+    warningLevel.value = 0
+    collisionTriggered.value = false
+    updateSimulationData()
+    if (canvasRef.value) canvasRef.value.resetAnimation()
+    ElMessage.success('V2X模拟已重置')
+  } else {
+    // 热力图模式重置
+    heatmapStore.reset()
+    ElMessage.success('热力图已重置')
   }
-  ElMessage.success('模拟已重置')
 }
 
 const handleCollisionEnd = () => {}
@@ -264,7 +292,6 @@ const handleCollisionEnd = () => {}
 // =====================================================
 // 生命周期
 // =====================================================
-
 onMounted(() => {
   updateSimulationData()
 })

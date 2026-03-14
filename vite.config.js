@@ -5,6 +5,8 @@ import { resolve } from 'path'
 // Vite配置文件
 export default defineConfig({
   plugins: [vue()],
+  // GitHub Pages部署配置 - 必须与仓库名完全一致
+  base: '/traffic-prediction/',
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src')
