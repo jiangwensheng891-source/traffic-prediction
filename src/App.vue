@@ -11,6 +11,16 @@
         <h1>{{ pageTitle }}</h1>
       </div>
       <div class="header-actions">
+        <!-- 视图切换按钮 -->
+        <el-button
+          v-if="viewMode === 'v2x'"
+          type="info"
+          @click="handleBackToHeatmap"
+          class="back-btn"
+        >
+          <el-icon><MapLocation /></el-icon>
+          返回热力图
+        </el-button>
         <el-button type="primary" @click="handleReset" class="reset-btn">
           <el-icon><RefreshRight /></el-icon>
           重置模拟
@@ -36,6 +46,7 @@
           @threshold2-change="handleThreshold2Change"
           @file-upload="handleFileUpload"
           @view-change="handleViewChange"
+          @demo-mode-change="handleDemoModeChange"
         />
       </aside>
 
@@ -51,11 +62,17 @@
           :simulation-data="currentSimulationData"
           :warning-level="warningLevel"
           :collision-triggered="collisionTriggered"
+          :demo-mode="demoMode"
           @collision-end="handleCollisionEnd"
         />
         
         <!-- 热力图地图 -->
-        <MapCanvas v-else ref="mapRef" />
+        <MapCanvas
+          v-else-if="viewMode === 'heatmap'"
+          ref="mapRef"
+          @enter-v2x="handleEnterV2XFromHeatmap"
+        />
+
       </section>
 
       <!-- 右侧面板区域 -->
@@ -98,6 +115,7 @@ import { defaultSimulationData } from '@/data/simulationData.js'
 import { parseSimulationFile } from '@/utils/dataParser.js'
 import { sceneConfigs } from '@/config/scenes.js'
 import { useHeatmapStore } from '@/stores/heatmap'
+import { roadTypeConfig } from '@/data/heatmapData.js'
 
 const heatmapStore = useHeatmapStore()
 
@@ -119,7 +137,11 @@ const mapRef = ref(null)
 // =====================================================
 // 视图模式
 // =====================================================
-const viewMode = ref('v2x')
+const viewMode = ref('heatmap') // 默认显示热力图
+const demoMode = ref(false) // 演示模式
+
+// 从热力图进入V2X时选中的路段
+const selectedSegmentFromMap = ref(null)
 
 // =====================================================
 // 计算属性
@@ -201,6 +223,46 @@ const showCollisionWarning = () => {
 // =====================================================
 const handleViewChange = (mode) => {
   viewMode.value = mode
+}
+
+// 演示模式切换
+const handleDemoModeChange = (value) => {
+  demoMode.value = value
+}
+
+// 从热力图进入V2X视图
+const handleEnterV2XFromHeatmap = (segment) => {
+  // 保存选中的路段信息
+  selectedSegmentFromMap.value = segment
+
+  // 根据道路类型设置场景
+  if (segment.roadType) {
+    const roadTypeToScene = {
+      'expressway': 'highway',
+      'urban': 'city',
+      'ramp': 'intersection',
+      'ring': 'ringRoad'
+    }
+    const scene = roadTypeToScene[segment.roadType] || 'city'
+    handleSceneChange(scene)
+  }
+
+  // 根据路段的风险值调整速度和密度
+  if (segment.speed) {
+    vehicleSpeed.value = segment.speed
+  }
+  if (segment.density) {
+    vehicleDensity.value = segment.density
+  }
+
+  // 切换到V2X视图
+  viewMode.value = 'v2x'
+}
+
+// 从V2X视图返回热力图
+const handleBackToHeatmap = () => {
+  viewMode.value = 'heatmap'
+  selectedSegmentFromMap.value = null
 }
 
 const handleSceneChange = (scene) => {
@@ -337,6 +399,24 @@ watch([vehicleSpeed, vehicleDensity], () => {
   }
   
   .header-actions {
+    display: flex;
+    gap: 12px;
+
+    .back-btn {
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: $radius-md;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      transition: all $transition-base;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.2);
+        transform: translateY(-2px);
+      }
+    }
+
     .reset-btn {
       padding: 10px 24px;
       font-size: 16px;
@@ -344,7 +424,7 @@ watch([vehicleSpeed, vehicleDensity], () => {
       border-radius: $radius-md;
       box-shadow: $shadow-primary;
       transition: all $transition-base;
-      
+
       &:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 24px rgba(0, 212, 255, 0.4);

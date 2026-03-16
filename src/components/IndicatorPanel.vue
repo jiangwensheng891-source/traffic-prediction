@@ -1,6 +1,6 @@
 <!-- =====================================================
      右侧指标面板组件 - 5G-V2X车联网可视化系统
-     功能：展示基础工况、通信性能、安全性能指标
+     功能：展示基础工况、通信性能、安全性能指标（柱状图）
      ===================================================== -->
 
 <template>
@@ -27,25 +27,10 @@
           <span>基础工况指标</span>
         </div>
       </template>
-      <div class="indicator-grid basic-grid">
-        <div class="indicator-item large">
-          <div class="indicator-label">行驶车速</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.vehicleSpeed) }}
-            <span class="unit">km/h</span>
-          </div>
-        </div>
-        <div class="indicator-item large">
-          <div class="indicator-label">车辆密度</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.vehicleDensity) }}
-            <span class="unit">veh/km</span>
-          </div>
-        </div>
-      </div>
+      <div ref="basicChartRef" class="chart-container"></div>
     </el-card>
 
-    <!-- 通信性能指标卡片 -->
+    <!-- 通信性能指标卡片 - 柱状图 -->
     <el-card class="indicator-card communication-card">
       <template #header>
         <div class="card-header">
@@ -53,53 +38,10 @@
           <span>通信性能指标</span>
         </div>
       </template>
-      <div class="indicator-grid">
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('msgSuccessRate50m') }">
-          <div class="indicator-label">50米消息接收成功率</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.msgSuccessRate50m, 2) }}
-            <span class="unit">%</span>
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('msgSuccessRate150m') }">
-          <div class="indicator-label">150米消息接收成功率</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.msgSuccessRate150m, 2) }}
-            <span class="unit">%</span>
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('packetLossRate150m') }">
-          <div class="indicator-label">150米丢包率</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.packetLossRate150m, 2) }}
-            <span class="unit">%</span>
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('avgMsgDelay') }">
-          <div class="indicator-label">平均消息时延</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.avgMsgDelay, 2) }}
-            <span class="unit">ms</span>
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('throughput') }">
-          <div class="indicator-label">吞吐量</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.throughput, 2) }}
-            <span class="unit">Mbps</span>
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('channelBusyRate') }">
-          <div class="indicator-label">信道忙碌率</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.channelBusyRate, 2) }}
-            <span class="unit">%</span>
-          </div>
-        </div>
-      </div>
+      <div ref="commChartRef" class="chart-container"></div>
     </el-card>
 
-    <!-- 安全性能指标卡片 -->
+    <!-- 安全性能指标卡片 - 柱状图 -->
     <el-card class="indicator-card safety-card">
       <template #header>
         <div class="card-header">
@@ -107,41 +49,14 @@
           <span>安全性能指标</span>
         </div>
       </template>
-      <div class="indicator-grid">
-        <div class="indicator-item">
-          <div class="indicator-label">相邻车辆数</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.adjacentVehicles, 0) }}
-            <span class="unit">辆</span>
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('wirelessBlindSpot') }">
-          <div class="indicator-label">无线盲区指标</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.wirelessBlindSpot, 2) }}
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('avoidanceSuccessRate'), danger: isDangerIndicator('avoidanceSuccessRate') }">
-          <div class="indicator-label">避让成功率</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.avoidanceSuccessRate, 2) }}
-            <span class="unit">%</span>
-          </div>
-        </div>
-        <div class="indicator-item" :class="{ highlight: isCoreIndicator('advanceWarningTime'), danger: isDangerIndicator('advanceWarningTime') }">
-          <div class="indicator-label">提前预警时间</div>
-          <div class="indicator-value">
-            {{ formatValue(simulationData?.advanceWarningTime, 2) }}
-            <span class="unit">s</span>
-          </div>
-        </div>
-      </div>
+      <div ref="safetyChartRef" class="chart-container"></div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import * as echarts from 'echarts'
 
 const props = defineProps({
   simulationData: { type: Object, default: () => ({}) },
@@ -149,6 +64,23 @@ const props = defineProps({
   currentScene: { type: String, default: 'city' },
   sceneConfig: { type: Object, default: () => ({}) }
 })
+
+// 图表引用
+const basicChartRef = ref(null)
+const commChartRef = ref(null)
+const safetyChartRef = ref(null)
+let basicChart = null
+let commChart = null
+let safetyChart = null
+
+// 图表颜色
+const chartColors = {
+  primary: '#00d4ff',
+  success: '#2ed573',
+  warning: '#ffa502',
+  danger: '#ff4757',
+  purple: '#a55eea'
+}
 
 const warningClass = computed(() => ({
   'warning-level-1': props.warningLevel === 1,
@@ -161,19 +93,187 @@ const warningMessage = computed(() => {
   return ''
 })
 
-const formatValue = (value, decimals = 0) => {
-  if (value === null || value === undefined || isNaN(value)) return '--'
-  return Number(value).toFixed(decimals)
+// 初始化基础工况柱状图
+const initBasicChart = () => {
+  if (!basicChartRef.value) return
+  
+  basicChart = echarts.init(basicChartRef.value)
+  
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    grid: { top: 20, right: 20, bottom: 30, left: 60 },
+    xAxis: {
+      type: 'category',
+      data: ['车速', '密度'],
+      axisLabel: { color: '#888' }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#888' },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+    },
+    series: [{
+      type: 'bar',
+      data: [
+        { value: props.simulationData?.vehicleSpeed || 0, itemStyle: { color: chartColors.primary } },
+        { value: props.simulationData?.vehicleDensity || 0, itemStyle: { color: chartColors.warning } }
+      ],
+      barWidth: '50%',
+      label: {
+        show: true,
+        position: 'top',
+        color: '#fff',
+        formatter: (params) => params.value + (params.dataIndex === 0 ? 'km/h' : 'veh/km')
+      }
+    }]
+  }
+  basicChart.setOption(option)
 }
 
-const isCoreIndicator = (indicator) => {
-  return props.sceneConfig?.coreIndicators?.includes(indicator) || false
+// 初始化通信性能柱状图
+const initCommChart = () => {
+  if (!commChartRef.value) return
+  
+  commChart = echarts.init(commChartRef.value)
+  
+  const data = [
+    { name: '50m成功率', value: props.simulationData?.msgSuccessRate50m || 0 },
+    { name: '150m成功率', value: props.simulationData?.msgSuccessRate150m || 0 },
+    { name: '150m丢包率', value: props.simulationData?.packetLossRate150m || 0 },
+    { name: '消息时延', value: props.simulationData?.avgMsgDelay || 0 },
+    { name: '吞吐量', value: props.simulationData?.throughput || 0 },
+    { name: '信道忙碌率', value: props.simulationData?.channelBusyRate || 0 }
+  ]
+  
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: { 
+      trigger: 'axis',
+      formatter: (params) => {
+        const item = params[0]
+        const units = ['%', '%', '%', 'ms', 'Mbps', '%']
+        return `${item.name}: ${item.value}${units[item.dataIndex]}`
+      }
+    },
+    grid: { top: 30, right: 20, bottom: 50, left: 50 },
+    xAxis: {
+      type: 'category',
+      data: data.map(d => d.name),
+      axisLabel: { 
+        color: '#888',
+        rotate: 30,
+        fontSize: 10
+      }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#888' },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+    },
+    series: [{
+      type: 'bar',
+      data: data.map((d, i) => ({
+        value: d.value,
+        itemStyle: { 
+          color: i < 2 ? chartColors.success : (i < 4 ? chartColors.primary : chartColors.warning)
+        }
+      })),
+      barWidth: '60%',
+      label: {
+        show: true,
+        position: 'top',
+        color: '#fff',
+        fontSize: 9,
+        formatter: (params) => params.value.toFixed(1)
+      }
+    }]
+  }
+  commChart.setOption(option)
 }
 
-const isDangerIndicator = (indicator) => {
-  if (props.warningLevel === 0) return false
-  return ['avoidanceSuccessRate', 'advanceWarningTime'].includes(indicator)
+// 初始化安全性能柱状图
+const initSafetyChart = () => {
+  if (!safetyChartRef.value) return
+  
+  safetyChart = echarts.init(safetyChartRef.value)
+  
+  const data = [
+    { name: '相邻车辆', value: props.simulationData?.adjacentVehicles || 0 },
+    { name: '无线盲区', value: props.simulationData?.wirelessBlindSpot || 0 },
+    { name: '避让成功率', value: props.simulationData?.avoidanceSuccessRate || 0 },
+    { name: '预警时间', value: props.simulationData?.advanceWarningTime || 0 }
+  ]
+  
+  const option = {
+    backgroundColor: 'transparent',
+    tooltip: { 
+      trigger: 'axis',
+      formatter: (params) => {
+        const item = params[0]
+        const units = ['', '', '%', 's']
+        return `${item.name}: ${item.value}${units[item.dataIndex]}`
+      }
+    },
+    grid: { top: 30, right: 20, bottom: 30, left: 60 },
+    xAxis: {
+      type: 'category',
+      data: data.map(d => d.name),
+      axisLabel: { color: '#888' }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: '#888' },
+      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+    },
+    series: [{
+      type: 'bar',
+      data: data.map((d, i) => ({
+        value: d.value,
+        itemStyle: { 
+          color: i === 2 ? (props.warningLevel > 0 ? chartColors.danger : chartColors.success) : 
+                  (i === 3 ? chartColors.primary : chartColors.purple)
+        }
+      })),
+      barWidth: '50%',
+      label: {
+        show: true,
+        position: 'top',
+        color: '#fff',
+        formatter: (params) => params.dataIndex >= 2 ? params.value.toFixed(1) + '%' : params.value.toFixed(1)
+      }
+    }]
+  }
+  safetyChart.setOption(option)
 }
+
+// 更新所有图表
+const updateCharts = () => {
+  nextTick(() => {
+    initBasicChart()
+    initCommChart()
+    initSafetyChart()
+  })
+}
+
+// 监听数据变化
+watch(() => props.simulationData, updateCharts, { deep: true })
+watch(() => props.warningLevel, updateCharts)
+
+onMounted(() => {
+  updateCharts()
+  window.addEventListener('resize', () => {
+    basicChart?.resize()
+    commChart?.resize()
+    safetyChart?.resize()
+  })
+})
+
+onUnmounted(() => {
+  basicChart?.dispose()
+  commChart?.dispose()
+  safetyChart?.dispose()
+})
 </script>
 
 <style lang="scss" scoped>
@@ -231,6 +331,11 @@ const isDangerIndicator = (indicator) => {
     color: $primary-color;
     .el-icon { font-size: 18px; }
   }
+}
+
+.chart-container {
+  width: 100%;
+  height: 150px;
 }
 
 .indicator-grid {

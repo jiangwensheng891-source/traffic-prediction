@@ -4,38 +4,44 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { defaultRoadSegments } from '@/data/heatmapData.js'
+import { defaultRoadSegments, timeSlotConfig } from '@/data/heatmapData.js'
 
 export const useHeatmapStore = defineStore('heatmap', () => {
   // =====================================================
   // 状态
   // =====================================================
-  
+
   // 路段数据
   const roadSegments = ref([])
-  
+
   // 风险阈值
   const riskThresholds = ref({
     low: 0.3,
     medium: 0.6,
     high: 0.8
   })
-  
+
   // 当前选中的阈值级别
   const currentThresholdLevel = ref('medium')
-  
+
   // 时间段过滤
   const selectedTimeSlot = ref('all') // all, morning, noon, evening, night
-  
+
+  // 当前实际时间（用于实时数据）
+  const currentTime = ref(new Date())
+
+  // 数据更新时间
+  const dataUpdateTime = ref(new Date())
+
   // 车密度过滤
   const densityFilter = ref({
     min: 0,
     max: 200
   })
-  
+
   // 选中的路段
   const selectedSegment = ref(null)
-  
+
   // 加载状态
   const isLoading = ref(false)
   
@@ -50,27 +56,44 @@ export const useHeatmapStore = defineStore('heatmap', () => {
   
   // 过滤后的路段数据
   const filteredSegments = computed(() => {
-    return roadSegments.value.filter(segment => {
+    return roadSegments.value.map(segment => {
+      // 根据选择的时段返回对应的风险值
+      let displayRisk = segment.risk
+
+      // 如果选择了特定时段，使用该时段的风险值
+      if (selectedTimeSlot.value !== 'all' && segment.timeSlots) {
+        displayRisk = segment.timeSlots[selectedTimeSlot.value] || segment.risk
+      }
+
+      return {
+        ...segment,
+        displayRisk
+      }
+    }).filter(segment => {
       // 车密度过滤
       if (segment.density < densityFilter.value.min || segment.density > densityFilter.value.max) {
         return false
       }
-      
-      // 时间段过滤（模拟数据中没有时间字段，跳过）
-      // 实际项目中可以根据segment.timestamp过滤
-      
+
       return true
     })
   })
   
   // 高风险路段（Top 10）
   const topRiskSegments = computed(() => {
-    return [...roadSegments.value]
-      .sort((a, b) => b.risk - a.risk)
+    const segments = selectedTimeSlot.value === 'all'
+      ? roadSegments.value
+      : filteredSegments.value
+    return [...segments]
+      .sort((a, b) => {
+        const riskA = a.displayRisk || a.risk
+        const riskB = b.displayRisk || b.risk
+        return riskB - riskA
+      })
       .slice(0, 10)
   })
-  
-  // 风险分布统计
+
+  // 风险分布统计（根据当前时段）
   const riskDistribution = computed(() => {
     const distribution = {
       low: 0,      // 0-0.3
@@ -78,15 +101,63 @@ export const useHeatmapStore = defineStore('heatmap', () => {
       high: 0,     // 0.6-0.8
       critical: 0  // 0.8-1.0
     }
-    
-    roadSegments.value.forEach(segment => {
-      if (segment.risk < 0.3) distribution.low++
-      else if (segment.risk < 0.6) distribution.medium++
-      else if (segment.risk < 0.8) distribution.high++
+
+    const segments = filteredSegments.value
+
+    segments.forEach(segment => {
+      const risk = segment.displayRisk || segment.risk
+      if (risk < 0.3) distribution.low++
+      else if (risk < 0.6) distribution.medium++
+      else if (risk < 0.8) distribution.high++
       else distribution.critical++
     })
-    
+
     return distribution
+  })
+
+  // 时段风险统计
+  const timeSlotStats = computed(() => {
+    const stats = {}
+    const slots = ['morning', 'noon', 'evening', 'night']
+
+    slots.forEach(slot => {
+      const slotRisks = roadSegments.value
+        .filter(s => s.timeSlots && s.timeSlots[slot] !== undefined)
+        .map(s => s.timeSlots[slot])
+
+      if (slotRisks.length > 0) {
+        const avg = slotRisks.reduce((a, b) => a + b, 0) / slotRisks.length
+        stats[slot] = {
+          avgRisk: avg,
+          count: slotRisks.length,
+          config: timeSlotConfig[slot]
+        }
+      }
+    })
+
+    return stats
+  })
+
+  // 当天平均风险
+  const dailyAvgRisk = computed(() => {
+    const segments = roadSegments.value
+    if (segments.length === 0) return 0
+
+    // 计算所有时段的总风险
+    const slots = ['morning', 'noon', 'evening', 'night']
+    let totalRisk = 0
+    let count = 0
+
+    segments.forEach(segment => {
+      slots.forEach(slot => {
+        if (segment.timeSlots && segment.timeSlots[slot]) {
+          totalRisk += segment.timeSlots[slot]
+          count++
+        }
+      })
+    })
+
+    return count > 0 ? totalRisk / count : 0
   })
   
   // =====================================================
@@ -207,22 +278,41 @@ export const useHeatmapStore = defineStore('heatmap', () => {
     return 10
   }
   
+  // 更新时间
+  const updateDataTime = () => {
+    dataUpdateTime.value = new Date()
+    currentTime.value = new Date()
+  }
+
+  // 获取当前时段
+  const getCurrentTimeSlot = () => {
+    const hour = currentTime.value.getHours()
+    if (hour >= 7 && hour < 9) return 'morning'
+    if (hour >= 11 && hour < 14) return 'noon'
+    if (hour >= 17 && hour < 19) return 'evening'
+    return 'night'
+  }
+
   return {
     // 状态
     roadSegments,
     riskThresholds,
     currentThresholdLevel,
     selectedTimeSlot,
+    currentTime,
+    dataUpdateTime,
     densityFilter,
     selectedSegment,
     isLoading,
-    
+
     // 计算属性
     currentThreshold,
     filteredSegments,
     topRiskSegments,
     riskDistribution,
-    
+    timeSlotStats,
+    dailyAvgRisk,
+
     // 方法
     loadDefaultData,
     setRoadSegments,
@@ -232,6 +322,8 @@ export const useHeatmapStore = defineStore('heatmap', () => {
     setDensityFilter,
     selectSegment,
     reset,
+    updateDataTime,
+    getCurrentTimeSlot,
     getRiskColor,
     getRiskGlowColor,
     getRiskOpacity,

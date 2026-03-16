@@ -17,6 +17,17 @@
         <el-radio-button value="v2x">V2X可视化</el-radio-button>
         <el-radio-button value="heatmap">风险热力图</el-radio-button>
       </el-radio-group>
+
+      <!-- 演示模式开关 -->
+      <div class="demo-mode-toggle" v-if="viewMode === 'v2x'">
+        <el-switch
+          v-model="demoMode"
+          active-text="演示模式"
+          inactive-text="手动控制"
+          @change="handleDemoModeChange"
+        />
+        <p class="demo-hint">演示模式下车辆自动行驶，无需操作</p>
+      </div>
     </el-card>
 
     <!-- V2X模式控制 -->
@@ -172,6 +183,50 @@
         </div>
       </el-card>
 
+      <!-- DeepSeek AI 智能问答 -->
+      <el-card class="control-card ai-chat-card">
+        <template #header>
+          <div class="card-header">
+            <el-icon><ChatDotRound /></el-icon>
+            <span>AI 智能问答</span>
+            <el-button size="small" text @click="showApiKeyDialog = true">
+              <el-icon><Setting /></el-icon>
+              {{ apiKey ? '已配置' : '设置密钥' }}
+            </el-button>
+          </div>
+        </template>
+
+        <!-- API密钥未配置提示 -->
+        <div v-if="!apiKey" class="api-key-prompt">
+          <el-alert type="warning" :closable="false">
+            <template #title>
+              请先配置DeepSeek API密钥
+            </template>
+            <div>点击右上角"设置密钥"按钮配置API Key</div>
+          </el-alert>
+        </div>
+
+        <div class="ai-chat-messages" ref="chatContainer" :class="{ disabled: !apiKey }">
+          <div v-for="(msg, index) in chatMessages" :key="index" :class="['chat-message', msg.role]">
+            <div class="message-content">{{ msg.content }}</div>
+          </div>
+          <div v-if="isLoading" class="chat-loading">
+            <span>AI 正在思考中...</span>
+          </div>
+        </div>
+        <div class="chat-input">
+          <el-input
+            v-model="userQuestion"
+            placeholder="请输入关于V2X/交通的问题..."
+            @keyup.enter="sendQuestion"
+            :disabled="isLoading"
+          />
+          <el-button type="primary" @click="sendQuestion" :loading="isLoading" :disabled="!userQuestion.trim()">
+            发送
+          </el-button>
+        </div>
+      </el-card>
+
       <!-- 车密度过滤 -->
       <el-card class="control-card density-card">
         <template #header>
@@ -214,14 +269,28 @@
       </el-card>
     </template>
   </div>
+
+    <!-- API密钥设置对话框 -->
+  <el-dialog v-model="showApiKeyDialog" title="设置DeepSeek API密钥" width="350px">
+    <p>请输入DeepSeek API密钥 (sk-...):</p>
+    <input type="text" v-model="inputApiKey" style="width: 100%; padding: 8px; box-sizing: border-box;" placeholder="sk-..." />
+    <p style="font-size: 12px; color: #888; margin-top: 10px">
+      获取密钥: <a href="https://platform.deepseek.com/" target="_blank" style="color: #409eff">DeepSeek开放平台</a>
+    </p>
+    <div style="margin-top: 15px; text-align: right;">
+      <button @click="showApiKeyDialog = false" style="padding: 6px 15px; margin-right: 8px; cursor: pointer;">取消</button>
+      <button @click="saveApiKey" style="padding: 6px 15px; background: #409eff; color: white; border: none; cursor: pointer;">保存</button>
+    </div>
+  </el-dialog>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { sceneList } from '@/config/scenes.js'
 import { useHeatmapStore } from '@/stores/heatmap'
 import { parseHeatmapFile } from '@/utils/heatmapParser.js'
+import { callDeepSeek } from '@/utils/deepseek.js'
 
 const heatmapStore = useHeatmapStore()
 
@@ -237,7 +306,7 @@ const props = defineProps({
 const emit = defineEmits([
   'scene-change', 'speed-change', 'density-change',
   'threshold1-change', 'threshold2-change', 'file-upload',
-  'view-change'
+  'view-change', 'demo-mode-change'
 ])
 
 // V2X模式状态
@@ -251,6 +320,42 @@ const isDisabled = ref(false)
 
 // 热力图模式状态
 const selectedTimeSlot = ref('all')
+
+// AI对话状态
+const chatMessages = ref([
+  { role: 'assistant', content: '您好！我是V2X车联网智能助手，有什么关于车联网通信、交通安全或智能驾驶的问题可以问我。' }
+])
+const userQuestion = ref('')
+const isLoading = ref(false)
+const chatContainer = ref(null)
+
+// API密钥状态
+const apiKey = ref('')
+const showApiKeyDialog = ref(false)
+const inputApiKey = ref('')
+
+// 初始化时加载保存的密钥
+import { getSavedApiKey, setApiKey } from '@/utils/deepseek.js'
+apiKey.value = getSavedApiKey()
+
+// 保存API密钥
+const saveApiKey = () => {
+  const key = inputApiKey.value.trim()
+  if (!key) {
+    ElMessage.warning('请输入API密钥')
+    return
+  }
+  setApiKey(key)
+  apiKey.value = key
+  showApiKeyDialog.value = false
+  inputApiKey.value = ''
+  ElMessage.success('API密钥保存成功')
+}
+
+// 打开对话框时加载已有密钥
+const openKeyDialog = () => {
+  inputApiKey.value = apiKey.value || ''
+}
 const riskLevel = ref('medium')
 const customThreshold = ref(60)
 const densityMin = ref(0)
@@ -258,6 +363,14 @@ const densityMax = ref(200)
 
 // 视图模式
 const viewMode = ref('v2x')
+
+// 演示模式
+const demoMode = ref(false)
+
+// 演示模式切换处理
+const handleDemoModeChange = (value) => {
+  emit('demo-mode-change', value)
+}
 
 const speedRange = computed(() => props.sceneConfig?.speedRange || [20, 60])
 const densityRange = computed(() => props.sceneConfig?.densityRange || [100, 300])
@@ -359,6 +472,47 @@ const handleHeatmapFileChange = async (uploadFile) => {
   return false
 }
 
+// AI对话函数
+const sendQuestion = async () => {
+  const question = userQuestion.value.trim()
+  if (!question || isLoading.value) return
+
+  // 检查API密钥
+  if (!apiKey.value) {
+    ElMessage.warning('请先设置DeepSeek API密钥')
+    showApiKeyDialog.value = true
+    return
+  }
+
+  // 添加用户消息
+  chatMessages.value.push({ role: 'user', content: question })
+  userQuestion.value = ''
+  isLoading.value = true
+
+  // 滚动到底部
+  await nextTick()
+  if (chatContainer.value) {
+    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+  }
+
+  try {
+    // 调用DeepSeek API，传入密钥
+    const answer = await callDeepSeek(question, 'deepseek-chat', apiKey.value)
+    chatMessages.value.push({ role: 'assistant', content: answer })
+  } catch (error) {
+    chatMessages.value.push({
+      role: 'assistant',
+      content: '抱歉，我遇到了问题，请稍后再试。错误信息: ' + error.message
+    })
+  } finally {
+    isLoading.value = false
+    await nextTick()
+    if (chatContainer.value) {
+      chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+    }
+  }
+}
+
 // 视图切换
 const handleViewChange = (mode) => {
   emit('view-change', mode)
@@ -406,22 +560,47 @@ defineExpose({
 .view-card {
   .view-radio {
     width: 100%;
-    
+
     :deep(.el-radio-button) {
       width: 50%;
-      
+
       .el-radio-button__inner {
         width: 100%;
         background: rgba(255, 255, 255, 0.05);
         border-color: $border-light;
         color: $text-secondary;
       }
-      
+
       &.is-active .el-radio-button__inner {
         background: $gradient-primary;
         border-color: $primary-color;
         color: $text-primary;
       }
+    }
+  }
+
+  .demo-mode-toggle {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid $border-light;
+
+    :deep(.el-switch) {
+      width: 100%;
+
+      .el-switch__label {
+        color: $text-secondary;
+
+        &.is-active {
+          color: $primary-color;
+        }
+      }
+    }
+
+    .demo-hint {
+      font-size: 12px;
+      color: $text-muted;
+      margin-top: 8px;
+      text-align: center;
     }
   }
 }
@@ -623,6 +802,75 @@ defineExpose({
     border-radius: $radius-sm;
     font-size: 12px;
     color: $primary-light;
+  }
+}
+
+.ai-chat-card {
+  .api-key-prompt {
+    margin-bottom: 12px;
+  }
+
+  .ai-chat-messages {
+    max-height: 250px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+
+    &.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .chat-message {
+      margin-bottom: 12px;
+      display: flex;
+
+      &.user {
+        justify-content: flex-end;
+        .message-content {
+          background: linear-gradient(135deg, #409eff, #67c23a);
+          color: #fff;
+          padding: 10px 14px;
+          border-radius: 12px 12px 4px 12px;
+          max-width: 85%;
+        }
+      }
+
+      &.assistant {
+        justify-content: flex-start;
+        .message-content {
+          background: rgba(255, 255, 255, 0.1);
+          color: $text-primary;
+          padding: 10px 14px;
+          border-radius: 12px 12px 12px 4px;
+          max-width: 85%;
+          line-height: 1.5;
+          font-size: 13px;
+        }
+      }
+
+      .message-content {
+        word-break: break-word;
+      }
+    }
+
+    .chat-loading {
+      text-align: center;
+      padding: 10px;
+      color: $text-muted;
+      font-size: 12px;
+    }
+  }
+
+  .chat-input {
+    display: flex;
+    gap: 8px;
+
+    .el-input {
+      flex: 1;
+    }
   }
 }
 </style>

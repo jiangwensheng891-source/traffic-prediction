@@ -77,61 +77,75 @@ const mapFields = (row) => {
     '车速(km/h)': 'vehicleSpeed',
     'vehicleSpeed': 'vehicleSpeed',
     'speed': 'vehicleSpeed',
-    
+    'Speed_kmh': 'vehicleSpeed',
+    'Speed': 'vehicleSpeed',
+
     // 车辆密度
     '车辆密度': 'vehicleDensity',
     '车辆密度(veh/km)': 'vehicleDensity',
     'vehicleDensity': 'vehicleDensity',
     'density': 'vehicleDensity',
-    
+    'Density_veh_per_km': 'vehicleDensity',
+    'Density': 'vehicleDensity',
+
     // 50米消息接收成功率
     '50米消息接收成功率': 'msgSuccessRate50m',
     '50米消息接收成功率(%)': 'msgSuccessRate50m',
     'msgSuccessRate50m': 'msgSuccessRate50m',
-    
+    'PRR_50m': 'msgSuccessRate50m',
+
     // 150米消息接收成功率
     '150米消息接收成功率': 'msgSuccessRate150m',
     '150米消息接收成功率(%)': 'msgSuccessRate150m',
     'msgSuccessRate150m': 'msgSuccessRate150m',
-    
+    'PRR_150m': 'msgSuccessRate150m',
+
     // 150米丢包率
     '150米丢包率': 'packetLossRate150m',
     '150米丢包率(%)': 'packetLossRate150m',
     'packetLossRate150m': 'packetLossRate150m',
-    
+    'PacketLoss_150m': 'packetLossRate150m',
+
     // 相邻车辆数
     '相邻车辆数': 'adjacentVehicles',
     '相邻车辆数(辆)': 'adjacentVehicles',
     'adjacentVehicles': 'adjacentVehicles',
-    
+    'Avg_Neighbors': 'adjacentVehicles',
+
     // 信道忙碌率
     '信道忙碌率': 'channelBusyRate',
     '信道忙碌率(%)': 'channelBusyRate',
     'channelBusyRate': 'channelBusyRate',
-    
+    'Avg_CBR': 'channelBusyRate',
+
     // 平均消息时延
     '平均消息时延': 'avgMsgDelay',
     '平均消息时延(ms)': 'avgMsgDelay',
     'avgMsgDelay': 'avgMsgDelay',
-    
+    'Avg_Delay_s': 'avgMsgDelay',
+
     // 吞吐量
     '吞吐量': 'throughput',
     '吞吐量(Mbps)': 'throughput',
     'throughput': 'throughput',
-    
+    'Throughput_kbps': 'throughput',
+
     // 无线盲区指标
     '无线盲区指标': 'wirelessBlindSpot',
     'wirelessBlindSpot': 'wirelessBlindSpot',
-    
+    'Blind_Spot_Metric': 'wirelessBlindSpot',
+
     // 避让成功率
     '避让成功率': 'avoidanceSuccessRate',
     '避让成功率(%)': 'avoidanceSuccessRate',
     'avoidanceSuccessRate': 'avoidanceSuccessRate',
-    
+    'Avoidance_Success_Prob': 'avoidanceSuccessRate',
+
     // 提前预警时间
     '提前预警时间': 'advanceWarningTime',
     '提前预警时间(s)': 'advanceWarningTime',
-    'advanceWarningTime': 'advanceWarningTime'
+    'advanceWarningTime': 'advanceWarningTime',
+    'Warning_Time_s': 'advanceWarningTime'
   }
   
   const mappedItem = {}

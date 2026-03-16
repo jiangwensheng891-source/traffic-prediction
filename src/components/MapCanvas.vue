@@ -7,15 +7,63 @@
 <template>
   <div class="map-container">
     <div ref="mapRef" class="map-canvas"></div>
-    
+
     <!-- 动态粒子背景 -->
     <div class="particle-overlay">
       <div v-for="i in 20" :key="i" class="particle" :style="getParticleStyle(i)"></div>
     </div>
-    
+
     <!-- 扫描线动画 -->
     <div class="scan-line"></div>
-    
+
+    <!-- 时段选择器 -->
+    <div class="time-slot-selector">
+      <div class="selector-title">
+        <span class="clock-icon">🕐</span>
+        时段选择
+      </div>
+      <div class="selector-buttons">
+        <el-button
+          :type="store.selectedTimeSlot === 'all' ? 'primary' : 'default'"
+          size="small"
+          @click="handleTimeSlotChange('all')"
+        >
+          全天
+        </el-button>
+        <el-button
+          :type="store.selectedTimeSlot === 'morning' ? 'primary' : 'default'"
+          size="small"
+          @click="handleTimeSlotChange('morning')"
+        >
+          早高峰
+        </el-button>
+        <el-button
+          :type="store.selectedTimeSlot === 'noon' ? 'primary' : 'default'"
+          size="small"
+          @click="handleTimeSlotChange('noon')"
+        >
+          平峰
+        </el-button>
+        <el-button
+          :type="store.selectedTimeSlot === 'evening' ? 'primary' : 'default'"
+          size="small"
+          @click="handleTimeSlotChange('evening')"
+        >
+          晚高峰
+        </el-button>
+        <el-button
+          :type="store.selectedTimeSlot === 'night' ? 'primary' : 'default'"
+          size="small"
+          @click="handleTimeSlotChange('night')"
+        >
+          夜间
+        </el-button>
+      </div>
+      <div class="current-time">
+        当前时段: <span class="time-label">{{ currentTimeSlotLabel }}</span>
+      </div>
+    </div>
+
     <!-- 图例 -->
     <div class="map-legend">
       <div class="legend-title">
@@ -90,6 +138,10 @@
             <span class="value">{{ selectedSegmentInfo.id }}</span>
           </div>
           <div class="detail-item">
+            <span class="label">道路类型</span>
+            <el-tag size="small">{{ getRoadTypeName(selectedSegmentInfo.roadType) }}</el-tag>
+          </div>
+          <div class="detail-item">
             <span class="label">平均车速</span>
             <span class="value">{{ selectedSegmentInfo.speed }} km/h</span>
           </div>
@@ -104,6 +156,26 @@
             </el-tag>
           </div>
         </div>
+        <!-- 改造建议（仅高风险路段显示） -->
+        <div v-if="selectedSegmentInfo.risk >= 0.75" class="improvement-suggestion">
+          <div class="suggestion-header">
+            <el-icon><Warning /></el-icon>
+            <span>改造建议</span>
+          </div>
+          <div class="suggestion-content">
+            <div class="suggestion-item" v-for="(suggestion, idx) in getImprovementSuggestions(selectedSegmentInfo)" :key="idx">
+              <span class="suggestion-icon">{{ suggestion.icon }}</span>
+              <span class="suggestion-text">{{ suggestion.text }}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="detail-actions">
+          <el-button type="primary" @click="handleEnterV2X">
+            <el-icon><DataAnalysis /></el-icon>
+            进入V2X微观视图
+          </el-button>
+        </div>
       </div>
     </el-dialog>
   </div>
@@ -112,7 +184,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import L from 'leaflet'
+import { ElMessage } from 'element-plus'
+import '@/utils/TXMapTitleLayer.js'
 import { useHeatmapStore } from '@/stores/heatmap'
+
+const emit = defineEmits(['enter-v2x'])
 
 const store = useHeatmapStore()
 
@@ -125,16 +201,112 @@ const showDetail = ref(false)
 
 const selectedSegmentInfo = computed(() => store.selectedSegment)
 
-// 统计计算
-const lowRiskCount = computed(() => store.filteredSegments.filter(s => s.risk < 0.25).length)
-const mediumLowCount = computed(() => store.filteredSegments.filter(s => s.risk >= 0.25 && s.risk < 0.5).length)
-const mediumHighCount = computed(() => store.filteredSegments.filter(s => s.risk >= 0.5 && s.risk < 0.75).length)
-const highRiskCount = computed(() => store.filteredSegments.filter(s => s.risk >= 0.75).length)
+// 统计计算 - 使用displayRisk
+const lowRiskCount = computed(() => store.filteredSegments.filter(s => (s.displayRisk || s.risk) < 0.25).length)
+const mediumLowCount = computed(() => store.filteredSegments.filter(s => {
+  const risk = s.displayRisk || s.risk
+  return risk >= 0.25 && risk < 0.5
+}).length)
+const mediumHighCount = computed(() => store.filteredSegments.filter(s => {
+  const risk = s.displayRisk || s.risk
+  return risk >= 0.5 && risk < 0.75
+}).length)
+const highRiskCount = computed(() => store.filteredSegments.filter(s => (s.displayRisk || s.risk) >= 0.75).length)
 const avgRisk = computed(() => {
   const segments = store.filteredSegments
   if (segments.length === 0) return 0
-  return segments.reduce((sum, s) => sum + s.risk, 0) / segments.length
+  return segments.reduce((sum, s) => sum + (s.displayRisk || s.risk), 0) / segments.length
 })
+
+// 当前时段标签 - 实时范围
+const currentTimeSlotLabel = computed(() => {
+  const now = new Date()
+  const hour = now.getHours()
+  const minute = now.getMinutes()
+  const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+
+  const slot = store.getCurrentTimeSlot()
+  const labels = {
+    morning: `早高峰 (当前 ${timeStr})`,
+    noon: `平峰 (当前 ${timeStr})`,
+    evening: `晚高峰 (当前 ${timeStr})`,
+    night: `夜间 (当前 ${timeStr})`
+  }
+  return labels[slot] || `当前 ${timeStr}`
+})
+
+// 时段选择处理
+const handleTimeSlotChange = (slot) => {
+  store.setTimeSlot(slot)
+}
+
+// 获取道路类型名称
+const getRoadTypeName = (roadType) => {
+  const types = {
+    expressway: '高速公路',
+    urban: '城市道路',
+    ramp: '匝道',
+    ring: '快速路'
+  }
+  return types[roadType] || '未知'
+}
+
+// 获取改造建议
+const getImprovementSuggestions = (segment) => {
+  const suggestions = []
+  const roadType = segment.roadType
+  const risk = segment.risk
+  const speed = segment.speed || 0
+  const density = segment.density || 0
+  
+  // 根据道路类型给出建议
+  if (roadType === 'urban' || roadType === 'ring') {
+    suggestions.push({ icon: '🚦', text: '增设信号灯智能调控系统，优化配时' })
+    suggestions.push({ icon: '📹', text: '增加视频监控覆盖，实时监测拥堵' })
+  }
+  
+  if (roadType === 'ramp') {
+    suggestions.push({ icon: '🔄', text: '优化匝道曲率，提升视距' })
+    suggestions.push({ icon: '⚠️', text: '增设限速标志和减速带' })
+  }
+  
+  if (roadType === 'expressway') {
+    suggestions.push({ icon: '🚧', text: '设置可变限速控制系统' })
+    suggestions.push({ icon: '📡', text: '部署V2X路侧通信单元(RSU)' })
+  }
+  
+  // 根据风险值给出建议
+  if (risk >= 0.85) {
+    suggestions.push({ icon: '🚨', text: '立即启动应急疏导预案' })
+    suggestions.push({ icon: '🛑', text: '考虑临时交通管制措施' })
+  } else if (risk >= 0.75) {
+    suggestions.push({ icon: '👷', text: '制定专项改造施工计划' })
+  }
+  
+  // 根据车速建议
+  if (speed > 60) {
+    suggestions.push({ icon: '⏩', text: '建议降低最高限速值' })
+  }
+  
+  // 根据密度建议
+  if (density > 150) {
+    suggestions.push({ icon: '🔀', text: '增设潮汐车道或可变车道' })
+  }
+  
+  // 通用建议
+  suggestions.push({ icon: '📊', text: '持续监测并更新风险评估模型' })
+  
+  return suggestions.slice(0, 4) // 最多返回4条建议
+}
+
+// 进入V2X视图
+const handleEnterV2X = () => {
+  if (selectedSegmentInfo.value) {
+    emit('enter-v2x', selectedSegmentInfo.value)
+    showDetail.value = false
+    ElMessage.success(`正在进入${selectedSegmentInfo.value.name}的V2X微观视图`)
+  }
+}
 
 // 粒子样式生成
 const getParticleStyle = (index) => {
@@ -152,22 +324,38 @@ const getParticleStyle = (index) => {
 // 初始化地图
 const initMap = () => {
   if (!mapRef.value) return
-  
+
+  // 珠海金湾区中心坐标
+  const ZH_JINWAN_CENTER = [22.14, 113.38]
+
   // 创建Leaflet地图
   map.value = L.map(mapRef.value, {
-    center: [39.90, 116.40],
-    zoom: 13,
+    center: ZH_JINWAN_CENTER,
+    zoom: 14,
     zoomControl: true,
     attributionControl: false,
     preferCanvas: true
   })
-  
-  // 使用深色主题地图
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-    subdomains: 'abcd'
+
+  // 使用腾讯地图 - 暗色风格
+  L.tileLayer.tencentDark({
+    maxZoom: 18,
+    minZoom: 3
   }).addTo(map.value)
-  
+
+  // 添加实时交通路况图层
+  const trafficLayer = L.tileLayer.tencentTraffic({
+    maxZoom: 18,
+    minZoom: 3,
+    opacity: 0.6,
+    transparent: true
+  }).addTo(map.value)
+
+  // 定时刷新实时路况（每30秒）
+  setInterval(() => {
+    trafficLayer.redraw()
+  }, 30000)
+
   // 添加区域热力背景
   addHeatBackground()
   
@@ -182,11 +370,12 @@ const initMap = () => {
 const addHeatBackground = () => {
   // 创建一个Canvas图层用于热力背景
   const canvasLayer = L.layerGroup().addTo(map.value)
-  
+
   store.filteredSegments.forEach(segment => {
-    const color = store.getRiskColor(segment.risk)
-    const opacity = Math.min(segment.risk * 0.3 + 0.1, 0.4)
-    
+    const risk = segment.displayRisk || segment.risk
+    const color = store.getRiskColor(risk)
+    const opacity = Math.min(risk * 0.3 + 0.1, 0.4)
+
     // 创建多边形区域（路段两侧扩展）
     if (segment.geometry.length >= 2) {
       const bounds = getExpandedBounds(segment.geometry, 0.003)
@@ -198,7 +387,7 @@ const addHeatBackground = () => {
       }).addTo(canvasLayer)
     }
   })
-  
+
   heatCanvas.value = canvasLayer
 }
 
@@ -230,9 +419,10 @@ const renderRoadSegments = () => {
   
   // 渲染过滤后的路段
   store.filteredSegments.forEach(segment => {
-    const color = store.getRiskColor(segment.risk)
-    const opacity = store.getRiskOpacity(segment.risk, store.currentThreshold)
-    const isHighRisk = segment.risk >= 0.75
+    const risk = segment.displayRisk || segment.risk
+    const color = store.getRiskColor(risk)
+    const opacity = store.getRiskOpacity(risk, store.currentThreshold)
+    const isHighRisk = risk >= 0.75
     
     // 发光底层（模拟发光效果）
     if (isHighRisk) {
@@ -269,6 +459,13 @@ const renderRoadSegments = () => {
     polyline.on('click', () => {
       store.selectSegment(segment)
       showDetail.value = true
+    })
+
+    // 双击进入V2X视图
+    polyline.on('dblclick', () => {
+      store.selectSegment(segment)
+      emit('enter-v2x', segment)
+      ElMessage.success(`正在进入${segment.name}的V2X微观视图`)
     })
     
     // 添加悬停事件
@@ -334,15 +531,15 @@ const addKeyMarkers = () => {
     map.value.removeLayer(layer)
   })
   markerLayers.value = []
-  
-  // 添加一些关键地点标记
+
+  // 添加珠海金湾区关键地点标记
   const keyLocations = [
-    { lat: 39.9142, lng: 116.3915, name: '天安门', type: 'landmark' },
-    { lat: 39.9087, lng: 116.3975, name: '王府井', type: 'commercial' },
-    { lat: 39.9163, lng: 116.3972, name: '东单路口', type: 'intersection' },
-    { lat: 39.9024, lng: 116.3834, name: '西单路口', type: 'intersection' },
-    { lat: 39.9344, lng: 116.4109, name: '朝阳门', type: 'landmark' },
-    { lat: 39.9319, lng: 116.4168, name: '建国门', type: 'intersection' },
+    { lat: 22.1428, lng: 113.3615, name: '金湾市民中心', type: 'landmark' },
+    { lat: 22.1356, lng: 113.3728, name: '金湾机场', type: 'landmark' },
+    { lat: 22.1289, lng: 113.3845, name: '金海大桥', type: 'landmark' },
+    { lat: 22.1512, lng: 113.3689, name: '珠海大道', type: 'intersection' },
+    { lat: 22.1456, lng: 113.3912, name: '机场东路', type: 'intersection' },
+    { lat: 22.1389, lng: 113.3567, name: '金湾立交', type: 'intersection' },
   ]
   
   keyLocations.forEach(loc => {
@@ -400,7 +597,15 @@ watch(() => store.currentThreshold, () => {
 })
 
 onMounted(() => {
+  // 先更新一次时间确保初始值正确
+  store.updateDataTime()
+
   initMap()
+
+  // 每50秒刷新一次时间，自动更新当前时段
+  setInterval(() => {
+    store.updateDataTime()
+  }, 50000)
 })
 
 onUnmounted(() => {
@@ -493,6 +698,57 @@ defineExpose({
       }
       100% {
         top: 100%;
+      }
+    }
+  }
+
+  // 时段选择器
+  .time-slot-selector {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 14, 39, 0.95);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: $radius-md;
+    padding: $spacing-md;
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+
+    .selector-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: $primary-color;
+      margin-bottom: $spacing-sm;
+      text-align: center;
+
+      .clock-icon {
+        font-size: 16px;
+      }
+    }
+
+    .selector-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .current-time {
+      margin-top: $spacing-sm;
+      padding-top: $spacing-sm;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 12px;
+      color: $text-secondary;
+      text-align: center;
+
+      .time-label {
+        color: $primary-color;
+        font-weight: 500;
       }
     }
   }
@@ -855,6 +1111,51 @@ defineExpose({
         color: $text-primary;
         font-size: 14px;
         font-weight: 500;
+      }
+    }
+  }
+  
+  // 改造建议样式
+  .improvement-suggestion {
+    margin-top: 16px;
+    padding: 12px;
+    background: rgba(255, 71, 87, 0.1);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    border-radius: 8px;
+    
+    .suggestion-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #ff4757;
+      
+      .el-icon {
+        font-size: 16px;
+      }
+    }
+    
+    .suggestion-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      
+      .suggestion-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: $text-secondary;
+        
+        .suggestion-icon {
+          font-size: 14px;
+        }
+        
+        .suggestion-text {
+          line-height: 1.4;
+        }
       }
     }
   }
