@@ -149,7 +149,9 @@ const mapFields = (row) => {
   }
   
   const mappedItem = {}
-  
+  // 记录原始字段名，用于判断单位
+  const originalKeys = {}
+
   // 遍历原始字段进行映射
   Object.keys(row).forEach(key => {
     const trimmedKey = key.trim()
@@ -160,10 +162,46 @@ const mapFields = (row) => {
       const value = row[key]
       if (value !== undefined && value !== '') {
         mappedItem[mappedKey] = parseFloat(value) || 0
+        originalKeys[mappedKey] = trimmedKey
       }
     }
   })
-  
+
+  // =====================================================
+  // 单位自动检测与换算
+  // 规则：如果原始字段名含 _kmh/_veh/_kbps/_s 等后缀，
+  //       或值范围明显是小数（≤1），则自动换算为系统使用的单位
+  // =====================================================
+
+  // 1. 成功率/丢包率/信道忙碌率/避让成功率：小数→百分比 (×100)
+  const rateFields = ['msgSuccessRate50m', 'msgSuccessRate150m', 'packetLossRate150m', 'channelBusyRate', 'avoidanceSuccessRate']
+  rateFields.forEach(field => {
+    if (mappedItem[field] !== undefined && mappedItem[field] <= 1.0) {
+      mappedItem[field] = parseFloat((mappedItem[field] * 100).toFixed(4))
+    }
+  })
+
+  // 2. 无线盲区指标：如果是极小值（≤0.1）也×100换成百分比
+  if (mappedItem['wirelessBlindSpot'] !== undefined && mappedItem['wirelessBlindSpot'] <= 0.1) {
+    mappedItem['wirelessBlindSpot'] = parseFloat((mappedItem['wirelessBlindSpot'] * 100).toFixed(4))
+  }
+
+  // 3. 平均消息时延：原始字段名含 _s 或值 < 1（秒），换算为毫秒 (×1000)
+  if (mappedItem['avgMsgDelay'] !== undefined) {
+    const origKey = originalKeys['avgMsgDelay'] || ''
+    if (origKey.includes('_s') || (mappedItem['avgMsgDelay'] < 1 && !origKey.includes('ms'))) {
+      mappedItem['avgMsgDelay'] = parseFloat((mappedItem['avgMsgDelay'] * 1000).toFixed(2))
+    }
+  }
+
+  // 4. 吞吐量：原始字段名含 _kbps，换算为 Mbps (÷1000)
+  if (mappedItem['throughput'] !== undefined) {
+    const origKey = originalKeys['throughput'] || ''
+    if (origKey.toLowerCase().includes('kbps')) {
+      mappedItem['throughput'] = parseFloat((mappedItem['throughput'] / 1000).toFixed(4))
+    }
+  }
+
   return mappedItem
 }
 
